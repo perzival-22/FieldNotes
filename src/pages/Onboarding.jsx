@@ -3,7 +3,7 @@ import { BriefcaseIcon, DocumentIcon, FileTextIcon } from '../components/Icons'
 
 const features = [
   { icon: BriefcaseIcon, title: 'Log jobs fast', desc: 'Capture client info, photos, and notes on site — no signal needed.' },
-  { icon: DocumentIcon, title: 'Build quotes in seconds', desc: 'Add labour items and materials, set VAT, and auto-calculate totals.' },
+  { icon: DocumentIcon, title: 'Build quotes in seconds', desc: 'Add labour items and materials, set tax, and auto-calculate totals.' },
   { icon: FileTextIcon, title: 'Export professional PDFs', desc: 'Generate branded quote PDFs you can share straight from your phone.' },
 ]
 

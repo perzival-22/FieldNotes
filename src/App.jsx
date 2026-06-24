@@ -56,7 +56,6 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<JobList />} />
           <Route path="/job/:id" element={<JobDetail />} />
-          <Route path="/quote/new" element={<QuoteBuilder />} />
           <Route path="/quote/:id" element={<QuoteBuilder />} />
           <Route path="/quotes" element={<QuotesListPage />} />
           <Route path="/settings" element={<Settings />} />

@@ -27,28 +27,26 @@ export default function QuoteBuilder() {
   const defaultRate = settings.defaultHourlyRate || 75
 
   const [applyTax, setApplyTax] = useState(false)
-
-  const [quote, setQuote] = useState({
-    labour_items: [],
-    vat_rate: 0,
-    valid_until: '',
-    status: 'draft',
-    notes: '',
-    subtotal: 0,
-    vat_amount: 0,
-    total: 0,
-    reference: '',
-  })
+  const [labourItems, setLabourItems] = useState([])
+  const [quoteStatus, setQuoteStatus] = useState('draft')
+  const [validUntil, setValidUntil] = useState('')
+  const [notes, setNotes] = useState('')
+  const [reference, setReference] = useState('')
+  const [quoteId, setQuoteId] = useState(null)
 
   const [labourForm, setLabourForm] = useState({ description: '', hours: '', rate: String(defaultRate) })
+
+  // Compute totals inline — no stale-closure risk from useEffect
+  const labourTotal = labourItems.reduce((s, i) => s + (i.hours * i.rate), 0)
+  const matsTotal = materials.reduce((s, m) => s + (m.cost * m.quantity), 0)
+  const subtotal = labourTotal + matsTotal
+  const effectiveRate = applyTax ? configuredTaxRate : 0
+  const vat_amount = subtotal * (effectiveRate / 100)
+  const total = subtotal + vat_amount
 
   useEffect(() => {
     loadData()
   }, [id, jobId])
-
-  useEffect(() => {
-    recalc()
-  }, [quote.labour_items, quote.vat_rate, materials])
 
   async function loadData() {
     if (isNew && jobId) {
@@ -56,8 +54,7 @@ export default function QuoteBuilder() {
       setJob(j)
       setMaterials(m || [])
       const all = getAllQuotes()
-      const ref = `FN-${String(all.length + 1).padStart(3, '0')}`
-      setQuote(q => ({ ...q, job_id: jobId, reference: ref }))
+      setReference(`FN-${String(all.length + 1).padStart(3, '0')}`)
     } else if (!isNew) {
       const allQ = getAllQuotes()
       const existing = allQ.find(q => q.id === id)
@@ -65,26 +62,20 @@ export default function QuoteBuilder() {
         const [j, m] = await Promise.all([getJobById(existing.job_id), getMaterials(existing.job_id)])
         setJob(j)
         setMaterials(m || [])
-        setQuote({ ...existing })
+        setLabourItems(existing.labour_items || [])
+        setQuoteStatus(existing.status || 'draft')
+        setValidUntil(existing.valid_until || '')
+        setNotes(existing.notes || '')
+        setReference(existing.reference || '')
+        setQuoteId(existing.id)
         setApplyTax((existing.vat_rate || 0) > 0)
       }
     }
     setLoading(false)
   }
 
-  function recalc() {
-    const labourTotal = (quote.labour_items || []).reduce((s, i) => s + (i.hours * i.rate), 0)
-    const matsTotal = materials.reduce((s, m) => s + (m.cost * m.quantity), 0)
-    const subtotal = labourTotal + matsTotal
-    const effectiveRate = quote.vat_rate || 0
-    const vat_amount = subtotal * (effectiveRate / 100)
-    const total = subtotal + vat_amount
-    setQuote(q => ({ ...q, subtotal, vat_amount, total }))
-  }
-
   function toggleTax(on) {
     setApplyTax(on)
-    setQuote(q => ({ ...q, vat_rate: on ? configuredTaxRate : 0 }))
   }
 
   function addLabourItem(e) {
@@ -94,22 +85,37 @@ export default function QuoteBuilder() {
       hours: parseFloat(labourForm.hours) || 0,
       rate: parseFloat(labourForm.rate) || defaultRate,
     }
-    setQuote(q => ({ ...q, labour_items: [...(q.labour_items || []), item] }))
+    setLabourItems(prev => [...prev, item])
     setLabourForm({ description: '', hours: '', rate: String(defaultRate) })
     setShowAddLabour(false)
   }
 
   function removeLabourItem(idx) {
-    setQuote(q => ({ ...q, labour_items: q.labour_items.filter((_, i) => i !== idx) }))
+    setLabourItems(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function buildQuotePayload() {
+    return {
+      labour_items: labourItems,
+      vat_rate: effectiveRate,
+      subtotal,
+      vat_amount,
+      total,
+      status: quoteStatus,
+      valid_until: validUntil,
+      notes,
+      reference,
+    }
   }
 
   async function handleSave() {
     setSaving(true)
     try {
+      const payload = buildQuotePayload()
       if (isNew) {
-        await createQuote({ ...quote, job_id: jobId })
+        await createQuote({ ...payload, job_id: jobId })
       } else {
-        await updateQuote(id, quote)
+        await updateQuote(quoteId || id, payload)
       }
       navigate(job ? `/job/${job.id}` : '/')
     } finally {
@@ -118,13 +124,17 @@ export default function QuoteBuilder() {
   }
 
   async function handleGeneratePDF() {
-    const doc = generateQuotePDF(quote, job || {}, settings, materials)
-    const filename = `quote-${quote.reference || 'draft'}.pdf`
+    const quoteData = {
+      ...buildQuotePayload(),
+      created_at: new Date().toISOString(),
+    }
+    const doc = generateQuotePDF(quoteData, job || {}, settings, materials)
+    const filename = `quote-${reference || 'draft'}.pdf`
     if (navigator.share) {
       const blob = doc.output('blob')
       const file = new File([blob], filename, { type: 'application/pdf' })
       try {
-        await navigator.share({ files: [file], title: `Quote ${quote.reference}` })
+        await navigator.share({ files: [file], title: `Quote ${reference}` })
         return
       } catch {}
     }
@@ -152,14 +162,14 @@ export default function QuoteBuilder() {
           <span style={{ fontSize: 14 }}>{job?.client_name || 'Back'}</span>
         </button>
         <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-accent)' }}>
-          {quote.reference || 'New Quote'}
+          {reference || 'New Quote'}
         </span>
       </div>
 
       <div style={{ padding: '0 16px' }}>
         {/* Labour */}
         <QSection title="Labour">
-          {(quote.labour_items || []).map((item, idx) => (
+          {labourItems.map((item, idx) => (
             <div key={idx} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '10px 0', borderBottom: '1px solid var(--color-border)',
@@ -223,9 +233,9 @@ export default function QuoteBuilder() {
 
         {/* Totals */}
         <div style={{ padding: '16px 0', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <TotalRow label="Subtotal" value={quote.subtotal} sym={sym} />
-          {applyTax && <TotalRow label={`${taxLabel} (${configuredTaxRate}%)`} value={quote.vat_amount} sym={sym} />}
-          <TotalRow label="TOTAL" value={quote.total} bold accent sym={sym} />
+          <TotalRow label="Subtotal" value={subtotal} sym={sym} />
+          {applyTax && <TotalRow label={`${taxLabel} (${configuredTaxRate}%)`} value={vat_amount} sym={sym} />}
+          <TotalRow label="TOTAL" value={total} bold accent sym={sym} />
         </div>
 
         {/* Quote Settings */}
@@ -235,8 +245,8 @@ export default function QuoteBuilder() {
               <label style={labelStyle}>Valid Until</label>
               <input
                 type="date"
-                value={quote.valid_until || ''}
-                onChange={e => setQuote(q => ({ ...q, valid_until: e.target.value }))}
+                value={validUntil}
+                onChange={e => setValidUntil(e.target.value)}
                 style={{ ...inputStyle, colorScheme: 'dark' }}
               />
             </div>
@@ -245,12 +255,10 @@ export default function QuoteBuilder() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <span style={{ fontSize: 14, color: 'var(--color-text)' }}>Apply {taxLabel}</span>
-                {configuredTaxRate > 0 && (
-                  <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 6 }}>({configuredTaxRate}%)</span>
-                )}
-                {configuredTaxRate === 0 && (
-                  <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 6 }}>— set rate in Settings</span>
-                )}
+                {configuredTaxRate > 0
+                  ? <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 6 }}>({configuredTaxRate}%)</span>
+                  : <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 6 }}>— set rate in Settings</span>
+                }
               </div>
               <button
                 onClick={() => toggleTax(!applyTax)}
@@ -274,12 +282,12 @@ export default function QuoteBuilder() {
                 {QUOTE_STATUSES.map(s => (
                   <button
                     key={s}
-                    onClick={() => setQuote(q => ({ ...q, status: s }))}
+                    onClick={() => setQuoteStatus(s)}
                     style={{
                       padding: '6px 14px', borderRadius: 20, border: '1px solid',
-                      borderColor: quote.status === s ? 'var(--color-accent)' : 'var(--color-border)',
-                      backgroundColor: quote.status === s ? 'rgba(245,158,11,0.15)' : 'transparent',
-                      color: quote.status === s ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                      borderColor: quoteStatus === s ? 'var(--color-accent)' : 'var(--color-border)',
+                      backgroundColor: quoteStatus === s ? 'rgba(245,158,11,0.15)' : 'transparent',
+                      color: quoteStatus === s ? 'var(--color-accent)' : 'var(--color-text-muted)',
                       fontSize: 13, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize',
                     }}
                   >
@@ -291,8 +299,8 @@ export default function QuoteBuilder() {
             <div>
               <label style={labelStyle}>Notes</label>
               <textarea
-                value={quote.notes || ''}
-                onChange={e => setQuote(q => ({ ...q, notes: e.target.value }))}
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
                 placeholder="Any notes for the client…"
                 rows={3}
                 style={inputStyle}
