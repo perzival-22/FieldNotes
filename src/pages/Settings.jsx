@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getSettings, saveSettings } from '../lib/localStorage'
+import { getSettings, saveSettings, getCurrencySymbol } from '../lib/localStorage'
 import useAuth from '../hooks/useAuth'
 
 export default function Settings() {
@@ -9,6 +9,9 @@ export default function Settings() {
   const [settings, setSettings] = useState(getSettings())
   const [confirmClear, setConfirmClear] = useState(false)
 
+  const currency = settings.currency || 'USD'
+  const sym = getCurrencySymbol(currency)
+
   function handleChange(key, value) {
     const updated = { ...settings, [key]: value }
     setSettings(updated)
@@ -16,14 +19,15 @@ export default function Settings() {
   }
 
   function handleClearAll() {
-    ['fn_jobs', 'fn_materials', 'fn_quotes', 'fn_settings', 'fn_onboarded'].forEach(k => localStorage.removeItem(k))
+    ;['fn_jobs', 'fn_materials', 'fn_quotes', 'fn_settings', 'fn_onboarded'].forEach(k =>
+      localStorage.removeItem(k)
+    )
     setConfirmClear(false)
     navigate('/onboarding')
   }
 
   return (
     <div style={{ flex: 1, paddingBottom: 80 }}>
-      {/* Header */}
       <div style={{ padding: '24px 16px 16px' }}>
         <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, color: 'var(--color-text)' }}>Settings</h1>
       </div>
@@ -42,41 +46,24 @@ export default function Settings() {
           label="Default Hourly Rate"
           value={settings.defaultHourlyRate || ''}
           onChange={v => handleChange('defaultHourlyRate', parseFloat(v) || 0)}
-          placeholder="e.g. 65"
+          placeholder="e.g. 75"
           type="number"
-          prefix="£"
+          prefix={sym}
         />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--color-border)' }}>
-          <span style={{ fontSize: 14, color: 'var(--color-text)' }}>VAT Registered</span>
-          <button
-            onClick={() => handleChange('vatRegistered', !settings.vatRegistered)}
-            style={{
-              width: 48, height: 28, borderRadius: 14,
-              backgroundColor: settings.vatRegistered ? 'var(--color-accent)' : 'var(--color-border)',
-              border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
-            }}
-          >
-            <div style={{
-              position: 'absolute', top: 3, left: settings.vatRegistered ? 23 : 3,
-              width: 22, height: 22, borderRadius: 11,
-              backgroundColor: '#fff', transition: 'left 0.2s',
-            }} />
-          </button>
-        </div>
         <div style={{ padding: '12px 0', borderBottom: '1px solid var(--color-border)' }}>
           <label style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8, display: 'block', fontWeight: 600 }}>Currency</label>
           <div style={{ display: 'flex', gap: 8 }}>
-            {['GBP', 'EUR', 'USD'].map(c => (
+            {['USD', 'EUR', 'GBP'].map(c => (
               <button
                 key={c}
                 onClick={() => handleChange('currency', c)}
                 style={{
                   flex: 1, padding: '8px',
                   border: '1px solid',
-                  borderColor: (settings.currency || 'GBP') === c ? 'var(--color-accent)' : 'var(--color-border)',
+                  borderColor: currency === c ? 'var(--color-accent)' : 'var(--color-border)',
                   borderRadius: 8,
-                  backgroundColor: (settings.currency || 'GBP') === c ? 'rgba(245,158,11,0.15)' : 'transparent',
-                  color: (settings.currency || 'GBP') === c ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                  backgroundColor: currency === c ? 'rgba(245,158,11,0.15)' : 'transparent',
+                  color: currency === c ? 'var(--color-accent)' : 'var(--color-text-muted)',
                   fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -85,6 +72,24 @@ export default function Settings() {
             ))}
           </div>
         </div>
+      </SettingsSection>
+
+      {/* Tax Settings */}
+      <SettingsSection title="Tax">
+        <SettingsField
+          label="Tax Label"
+          value={settings.taxLabel || ''}
+          onChange={v => handleChange('taxLabel', v)}
+          placeholder="Sales Tax"
+        />
+        <SettingsField
+          label="Tax Rate"
+          value={settings.taxRate !== undefined ? String(settings.taxRate) : ''}
+          onChange={v => handleChange('taxRate', parseFloat(v) || 0)}
+          placeholder="e.g. 8.5"
+          type="number"
+          suffix="%"
+        />
       </SettingsSection>
 
       {/* Account */}
@@ -134,10 +139,6 @@ export default function Settings() {
             <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>Version</span>
             <span style={{ fontSize: 14, color: 'var(--color-text)' }}>1.0.0</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>GitHub</span>
-            <a href="https://github.com/perzival-22/FieldNotes" target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent)', fontSize: 14 }}>View source ↗</a>
-          </div>
         </div>
       </SettingsSection>
 
@@ -184,7 +185,7 @@ function SettingsSection({ title, children }) {
   )
 }
 
-function SettingsField({ label, value, onChange, placeholder, type = 'text', prefix }) {
+function SettingsField({ label, value, onChange, placeholder, type = 'text', prefix, suffix }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--color-border)' }}>
       <span style={{ fontSize: 14, color: 'var(--color-text)', width: 140, flexShrink: 0 }}>{label}</span>
@@ -197,6 +198,7 @@ function SettingsField({ label, value, onChange, placeholder, type = 'text', pre
           placeholder={placeholder}
           style={{ flex: 1, fontSize: 14, color: 'var(--color-text)', background: 'transparent', border: 'none', textAlign: 'right' }}
         />
+        {suffix && <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>{suffix}</span>}
       </div>
     </div>
   )

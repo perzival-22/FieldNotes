@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { getJobById, getMaterials, createQuote, updateQuote, getQuotes } from '../lib/dataService'
-import { getSettings, getNextQuoteRef } from '../lib/localStorage'
-import { getAllQuotes } from '../lib/localStorage'
+import { getJobById, getMaterials, createQuote, updateQuote } from '../lib/dataService'
+import { getSettings, getAllQuotes, getCurrencySymbol } from '../lib/localStorage'
 import { generateQuotePDF } from '../lib/pdfGenerator'
 import { ArrowLeftIcon, PlusIcon, TrashIcon } from '../components/Icons'
 
-const VAT_RATES = [0, 5, 20]
 const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined']
 
 export default function QuoteBuilder() {
@@ -23,11 +21,16 @@ export default function QuoteBuilder() {
   const [showAddLabour, setShowAddLabour] = useState(false)
   const settings = getSettings()
 
-  const defaultRate = settings.defaultHourlyRate || 65
+  const sym = getCurrencySymbol(settings.currency || 'USD')
+  const taxLabel = settings.taxLabel || 'Sales Tax'
+  const configuredTaxRate = settings.taxRate || 0
+  const defaultRate = settings.defaultHourlyRate || 75
+
+  const [applyTax, setApplyTax] = useState(false)
 
   const [quote, setQuote] = useState({
     labour_items: [],
-    vat_rate: settings.vatRegistered ? 20 : 0,
+    vat_rate: 0,
     valid_until: '',
     status: 'draft',
     notes: '',
@@ -48,12 +51,13 @@ export default function QuoteBuilder() {
   }, [quote.labour_items, quote.vat_rate, materials])
 
   async function loadData() {
-    const jid = isNew ? jobId : null
     if (isNew && jobId) {
       const [j, m] = await Promise.all([getJobById(jobId), getMaterials(jobId)])
       setJob(j)
       setMaterials(m || [])
-      setQuote(q => ({ ...q, job_id: jobId, reference: getNextQuoteRef() }))
+      const all = getAllQuotes()
+      const ref = `FN-${String(all.length + 1).padStart(3, '0')}`
+      setQuote(q => ({ ...q, job_id: jobId, reference: ref }))
     } else if (!isNew) {
       const allQ = getAllQuotes()
       const existing = allQ.find(q => q.id === id)
@@ -62,6 +66,7 @@ export default function QuoteBuilder() {
         setJob(j)
         setMaterials(m || [])
         setQuote({ ...existing })
+        setApplyTax((existing.vat_rate || 0) > 0)
       }
     }
     setLoading(false)
@@ -71,9 +76,15 @@ export default function QuoteBuilder() {
     const labourTotal = (quote.labour_items || []).reduce((s, i) => s + (i.hours * i.rate), 0)
     const matsTotal = materials.reduce((s, m) => s + (m.cost * m.quantity), 0)
     const subtotal = labourTotal + matsTotal
-    const vat_amount = subtotal * (quote.vat_rate / 100)
+    const effectiveRate = quote.vat_rate || 0
+    const vat_amount = subtotal * (effectiveRate / 100)
     const total = subtotal + vat_amount
     setQuote(q => ({ ...q, subtotal, vat_amount, total }))
+  }
+
+  function toggleTax(on) {
+    setApplyTax(on)
+    setQuote(q => ({ ...q, vat_rate: on ? configuredTaxRate : 0 }))
   }
 
   function addLabourItem(e) {
@@ -156,7 +167,7 @@ export default function QuoteBuilder() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text)' }}>{item.description}</div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  {item.hours} hrs × £{item.rate}/hr = £{(item.hours * item.rate).toFixed(2)}
+                  {item.hours} hrs × {sym}{item.rate}/hr = {sym}{(item.hours * item.rate).toFixed(2)}
                 </div>
               </div>
               <button onClick={() => removeLabourItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger)', padding: 4 }}>
@@ -167,13 +178,13 @@ export default function QuoteBuilder() {
 
           {showAddLabour ? (
             <form onSubmit={addLabourItem} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12 }}>
-              <SInput placeholder="Description (e.g. Electrical survey)" value={labourForm.description} onChange={v => setLabourForm(f => ({ ...f, description: v }))} />
+              <SInput placeholder="Description (e.g. Electrical inspection)" value={labourForm.description} onChange={v => setLabourForm(f => ({ ...f, description: v }))} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <SInput placeholder="Hours" value={labourForm.hours} onChange={v => setLabourForm(f => ({ ...f, hours: v }))} type="number" />
-                <SInput placeholder="Rate £/hr" value={labourForm.rate} onChange={v => setLabourForm(f => ({ ...f, rate: v }))} type="number" />
+                <SInput placeholder={`Rate ${sym}/hr`} value={labourForm.rate} onChange={v => setLabourForm(f => ({ ...f, rate: v }))} type="number" />
               </div>
               <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-                = £{((parseFloat(labourForm.hours) || 0) * (parseFloat(labourForm.rate) || 0)).toFixed(2)}
+                = {sym}{((parseFloat(labourForm.hours) || 0) * (parseFloat(labourForm.rate) || 0)).toFixed(2)}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: 'var(--color-accent)', color: '#111827', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>Add Item</button>
@@ -202,23 +213,19 @@ export default function QuoteBuilder() {
               <div key={m.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontSize: 14, color: 'var(--color-text)' }}>{m.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{m.quantity} × £{Number(m.cost).toFixed(2)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{m.quantity} × {sym}{Number(m.cost).toFixed(2)}</div>
                 </div>
-                <div style={{ fontSize: 14, color: 'var(--color-accent)', fontWeight: 600 }}>£{(m.quantity * m.cost).toFixed(2)}</div>
+                <div style={{ fontSize: 14, color: 'var(--color-accent)', fontWeight: 600 }}>{sym}{(m.quantity * m.cost).toFixed(2)}</div>
               </div>
             ))}
           </QSection>
         )}
 
         {/* Totals */}
-        <div style={{
-          padding: '16px 0',
-          borderBottom: '1px solid var(--color-border)',
-          display: 'flex', flexDirection: 'column', gap: 6,
-        }}>
-          <TotalRow label="Subtotal" value={quote.subtotal} />
-          {quote.vat_rate > 0 && <TotalRow label={`VAT (${quote.vat_rate}%)`} value={quote.vat_amount} />}
-          <TotalRow label="TOTAL" value={quote.total} bold accent />
+        <div style={{ padding: '16px 0', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <TotalRow label="Subtotal" value={quote.subtotal} sym={sym} />
+          {applyTax && <TotalRow label={`${taxLabel} (${configuredTaxRate}%)`} value={quote.vat_amount} sym={sym} />}
+          <TotalRow label="TOTAL" value={quote.total} bold accent sym={sym} />
         </div>
 
         {/* Quote Settings */}
@@ -233,28 +240,34 @@ export default function QuoteBuilder() {
                 style={{ ...inputStyle, colorScheme: 'dark' }}
               />
             </div>
-            <div>
-              <label style={labelStyle}>VAT Rate</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {VAT_RATES.map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setQuote(q => ({ ...q, vat_rate: r }))}
-                    style={{
-                      flex: 1, padding: '8px',
-                      border: '1px solid',
-                      borderColor: quote.vat_rate === r ? 'var(--color-accent)' : 'var(--color-border)',
-                      borderRadius: 8,
-                      backgroundColor: quote.vat_rate === r ? 'rgba(245,158,11,0.15)' : 'transparent',
-                      color: quote.vat_rate === r ? 'var(--color-accent)' : 'var(--color-text-muted)',
-                      fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >
-                    {r}%
-                  </button>
-                ))}
+
+            {/* Tax toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <span style={{ fontSize: 14, color: 'var(--color-text)' }}>Apply {taxLabel}</span>
+                {configuredTaxRate > 0 && (
+                  <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 6 }}>({configuredTaxRate}%)</span>
+                )}
+                {configuredTaxRate === 0 && (
+                  <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 6 }}>— set rate in Settings</span>
+                )}
               </div>
+              <button
+                onClick={() => toggleTax(!applyTax)}
+                style={{
+                  width: 48, height: 28, borderRadius: 14,
+                  backgroundColor: applyTax ? 'var(--color-accent)' : 'var(--color-border)',
+                  border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: 3, left: applyTax ? 23 : 3,
+                  width: 22, height: 22, borderRadius: 11,
+                  backgroundColor: '#fff', transition: 'left 0.2s',
+                }} />
+              </button>
             </div>
+
             <div>
               <label style={labelStyle}>Status</label>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -337,12 +350,12 @@ function QSection({ title, children }) {
   )
 }
 
-function TotalRow({ label, value, bold, accent }) {
+function TotalRow({ label, value, bold, accent, sym }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, alignItems: 'center' }}>
       <span style={{ fontSize: 14, color: 'var(--color-text-muted)', fontWeight: bold ? 700 : 400 }}>{label}:</span>
       <span style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 500, color: accent ? 'var(--color-accent)' : 'var(--color-text)', minWidth: 80, textAlign: 'right' }}>
-        £{Number(value || 0).toFixed(2)}
+        {sym}{Number(value || 0).toFixed(2)}
       </span>
     </div>
   )

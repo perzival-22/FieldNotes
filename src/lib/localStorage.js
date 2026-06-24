@@ -61,3 +61,8 @@ export function deleteQuote(id) { save('fn_quotes', load('fn_quotes').filter(q =
 // Settings
 export function getSettings() { return load('fn_settings', {}) }
 export function saveSettings(s) { save('fn_settings', s) }
+
+// Currency helper
+export function getCurrencySymbol(currency) {
+  return { USD: '$', GBP: '£', EUR: '€' }[currency] || '$'
+}

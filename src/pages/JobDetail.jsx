@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getJobById, updateJob, deleteJob, getMaterials, addMaterial, updateMaterial, deleteMaterial, getQuotes } from '../lib/dataService'
-import { getSettings } from '../lib/localStorage'
+import { getSettings, getCurrencySymbol } from '../lib/localStorage'
 import { ArrowLeftIcon, PlusIcon, TrashIcon, CloseIcon } from '../components/Icons'
 
 const STATUSES = ['quote', 'active', 'done', 'invoiced', 'paid']
@@ -84,6 +84,8 @@ export default function JobDetail() {
     setEditMatId(null)
   }
 
+  const settings = getSettings()
+  const sym = getCurrencySymbol(settings.currency || 'USD')
   const matTotal = materials.reduce((s, m) => s + (m.cost * m.quantity), 0)
 
   const STATUS_BADGE = {
@@ -212,7 +214,7 @@ export default function JobDetail() {
         </Section>
 
         {/* Materials */}
-        <Section title={`Materials${matTotal > 0 ? ` — Total: £${matTotal.toFixed(2)}` : ''}`}>
+        <Section title={`Materials${matTotal > 0 ? ` — Total: ${sym}${matTotal.toFixed(2)}` : ''}`}>
           {materials.map(m => (
             <div key={m.id} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -225,7 +227,7 @@ export default function JobDetail() {
                   <div onClick={() => setEditMatId(m.id)} style={{ flex: 1, cursor: 'pointer' }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text)' }}>{m.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                      {m.quantity} × £{Number(m.cost).toFixed(2)} = £{(m.quantity * m.cost).toFixed(2)}
+                      {m.quantity} × {sym}{Number(m.cost).toFixed(2)} = {sym}{(m.quantity * m.cost).toFixed(2)}
                     </div>
                   </div>
                   <button onClick={() => handleDeleteMaterial(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger)', padding: '4px' }}>
@@ -241,7 +243,7 @@ export default function JobDetail() {
               <SmallInput placeholder="Material name" value={addMatForm.name} onChange={v => setAddMatForm(f => ({ ...f, name: v }))} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <SmallInput placeholder="Qty" value={addMatForm.qty} onChange={v => setAddMatForm(f => ({ ...f, qty: v }))} type="number" />
-                <SmallInput placeholder="Cost £" value={addMatForm.cost} onChange={v => setAddMatForm(f => ({ ...f, cost: v }))} type="number" />
+                <SmallInput placeholder={`Cost ${sym}`} value={addMatForm.cost} onChange={v => setAddMatForm(f => ({ ...f, cost: v }))} type="number" />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="submit" style={{ flex: 1, padding: '8px', backgroundColor: 'var(--color-accent)', color: '#111827', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Add</button>
@@ -306,7 +308,7 @@ export default function JobDetail() {
                 <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-text)' }}>{q.reference}</div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textTransform: 'capitalize' }}>{q.status}</div>
               </div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-accent)' }}>£{Number(q.total).toFixed(2)}</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-accent)' }}>{sym}{Number(q.total).toFixed(2)}</div>
             </button>
           ))}
           <button
@@ -431,7 +433,7 @@ function EditMaterialInline({ mat, onSave, onCancel }) {
       <SmallInput placeholder="Name" value={name} onChange={setName} />
       <div style={{ display: 'flex', gap: 6 }}>
         <SmallInput placeholder="Qty" value={qty} onChange={setQty} type="number" />
-        <SmallInput placeholder="Cost £" value={cost} onChange={setCost} type="number" />
+        <SmallInput placeholder="Cost $" value={cost} onChange={setCost} type="number" />
         <button onClick={() => onSave({ name, quantity: parseFloat(qty) || 1, cost: parseFloat(cost) || 0 })} style={{ padding: '6px 12px', backgroundColor: 'var(--color-accent)', color: '#111827', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Save</button>
         <button onClick={onCancel} style={{ padding: '6px 10px', backgroundColor: 'transparent', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 12, cursor: 'pointer', color: 'var(--color-text-muted)' }}>✕</button>
       </div>

@@ -1,6 +1,11 @@
 import { supabase, isSupabaseConfigured } from './supabase'
 import * as ls from './localStorage'
 
+async function currentUserId() {
+  const { data: { user } } = await supabase.auth.getUser()
+  return user?.id ?? null
+}
+
 // ── Jobs ─────────────────────────────────────────────────────────────
 export async function getJobs() {
   if (!isSupabaseConfigured) return ls.getJobs()
@@ -29,7 +34,12 @@ export async function createJob(data) {
   const job = ls.createJob(data)
   if (!isSupabaseConfigured) return job
   try {
-    const { data: row, error } = await supabase.from('jobs').insert({ ...data, id: job.id }).select().single()
+    const userId = await currentUserId()
+    const { data: row, error } = await supabase
+      .from('jobs')
+      .insert({ ...data, id: job.id, user_id: userId })
+      .select()
+      .single()
     if (error) throw error
     return row
   } catch {
@@ -41,7 +51,12 @@ export async function updateJob(id, updates) {
   const job = ls.updateJob(id, updates)
   if (!isSupabaseConfigured) return job
   try {
-    const { data, error } = await supabase.from('jobs').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+    const { data, error } = await supabase
+      .from('jobs')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
     if (error) throw error
     return data
   } catch {
@@ -73,7 +88,11 @@ export async function addMaterial(jobId, data) {
   const mat = ls.addMaterial(jobId, data)
   if (!isSupabaseConfigured) return mat
   try {
-    const { data: row, error } = await supabase.from('materials').insert({ ...data, job_id: jobId, id: mat.id }).select().single()
+    const { data: row, error } = await supabase
+      .from('materials')
+      .insert({ ...data, job_id: jobId, id: mat.id })
+      .select()
+      .single()
     if (error) throw error
     return row
   } catch {
@@ -113,7 +132,12 @@ export async function createQuote(data) {
   const q = ls.createQuote(data)
   if (!isSupabaseConfigured) return q
   try {
-    const { data: row, error } = await supabase.from('quotes').insert({ ...data, id: q.id, reference: q.reference }).select().single()
+    const userId = await currentUserId()
+    const { data: row, error } = await supabase
+      .from('quotes')
+      .insert({ ...data, id: q.id, reference: q.reference, user_id: userId })
+      .select()
+      .single()
     if (error) throw error
     return row
   } catch {
@@ -125,10 +149,23 @@ export async function updateQuote(id, updates) {
   const q = ls.updateQuote(id, updates)
   if (!isSupabaseConfigured) return q
   try {
-    const { data, error } = await supabase.from('quotes').update(updates).eq('id', id).select().single()
+    const { data, error } = await supabase
+      .from('quotes')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
     if (error) throw error
     return data
   } catch {
     return q
   }
+}
+
+export async function deleteQuote(id) {
+  ls.deleteQuote(id)
+  if (!isSupabaseConfigured) return
+  try {
+    await supabase.from('quotes').delete().eq('id', id)
+  } catch {}
 }

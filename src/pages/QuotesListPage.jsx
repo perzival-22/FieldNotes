@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { getAllQuotes } from '../lib/localStorage'
+import { getAllQuotes, getSettings, getCurrencySymbol } from '../lib/localStorage'
 import { useState, useEffect } from 'react'
 
 const STATUS_COLORS = {
@@ -12,6 +12,8 @@ const STATUS_COLORS = {
 export default function QuotesListPage() {
   const navigate = useNavigate()
   const [quotes, setQuotes] = useState([])
+  const settings = getSettings()
+  const sym = getCurrencySymbol(settings.currency || 'USD')
 
   useEffect(() => {
     setQuotes(getAllQuotes().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
@@ -56,11 +58,11 @@ export default function QuotesListPage() {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text)' }}>{q.reference}</div>
                   <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                    {new Date(q.created_at).toLocaleDateString('en-GB')}
+                    {new Date(q.created_at).toLocaleDateString('en-US')}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                  <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-accent)' }}>£{Number(q.total).toFixed(2)}</span>
+                  <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-accent)' }}>{sym}{Number(q.total).toFixed(2)}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, backgroundColor: sc.bg, color: sc.color, textTransform: 'capitalize' }}>
                     {q.status}
                   </span>

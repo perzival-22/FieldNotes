@@ -1,11 +1,19 @@
 import jsPDF from 'jspdf'
 
+function fmt(date) {
+  return new Date(date).toLocaleDateString('en-US')
+}
+
 export function generateQuotePDF(quote, job, settings, materials = []) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const pageW = 210
   const margin = 20
   let y = margin
 
+  const sym = { USD: '$', GBP: '£', EUR: '€' }[settings.currency] || '$'
+  const taxLabel = settings.taxLabel || 'Sales Tax'
+
+  // Company header
   doc.setFontSize(20)
   doc.setFont('helvetica', 'bold')
   doc.text(settings.companyName || 'FieldNotes', margin, y)
@@ -19,14 +27,15 @@ export function generateQuotePDF(quote, job, settings, materials = []) {
   if (settings.email) { doc.text(settings.email, margin, y); y += 5 }
   doc.setTextColor(0)
 
+  // Quote ref + date (top right)
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
   doc.text(`QUOTE ${quote.reference}`, pageW - margin, margin, { align: 'right' })
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  doc.text(`Date: ${new Date(quote.created_at).toLocaleDateString('en-GB')}`, pageW - margin, margin + 7, { align: 'right' })
+  doc.text(`Date: ${fmt(quote.created_at)}`, pageW - margin, margin + 7, { align: 'right' })
   if (quote.valid_until) {
-    doc.text(`Valid until: ${new Date(quote.valid_until).toLocaleDateString('en-GB')}`, pageW - margin, margin + 12, { align: 'right' })
+    doc.text(`Valid until: ${fmt(quote.valid_until + 'T00:00:00')}`, pageW - margin, margin + 12, { align: 'right' })
   }
 
   y += 10
@@ -34,6 +43,7 @@ export function generateQuotePDF(quote, job, settings, materials = []) {
   doc.line(margin, y, pageW - margin, y)
   y += 8
 
+  // Client block
   doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
   doc.text('Bill To:', margin, y)
@@ -44,6 +54,7 @@ export function generateQuotePDF(quote, job, settings, materials = []) {
   if (job.phone) { doc.text(job.phone, margin, y); y += 5 }
   y += 5
 
+  // Scope of work
   if (job.description) {
     doc.setFont('helvetica', 'bold')
     doc.text('Scope of Work:', margin, y); y += 5
@@ -53,6 +64,7 @@ export function generateQuotePDF(quote, job, settings, materials = []) {
     y += lines.length * 5 + 5
   }
 
+  // Line item header
   doc.setFont('helvetica', 'bold')
   doc.text('Description', margin, y)
   doc.text('Qty', 120, y, { align: 'right' })
@@ -63,21 +75,23 @@ export function generateQuotePDF(quote, job, settings, materials = []) {
   y += 5
   doc.setFont('helvetica', 'normal')
 
+  // Labour items
   ;(quote.labour_items || []).forEach(item => {
     const amount = (item.hours * item.rate).toFixed(2)
     doc.text(item.description || 'Labour', margin, y)
     doc.text(String(item.hours), 120, y, { align: 'right' })
-    doc.text(`£${Number(item.rate).toFixed(2)}/hr`, 150, y, { align: 'right' })
-    doc.text(`£${amount}`, pageW - margin, y, { align: 'right' })
+    doc.text(`${sym}${Number(item.rate).toFixed(2)}/hr`, 150, y, { align: 'right' })
+    doc.text(`${sym}${amount}`, pageW - margin, y, { align: 'right' })
     y += 6
   })
 
+  // Material items
   materials.forEach(mat => {
     const amount = (mat.quantity * mat.cost).toFixed(2)
     doc.text(mat.name || 'Material', margin, y)
     doc.text(String(mat.quantity), 120, y, { align: 'right' })
-    doc.text(`£${Number(mat.cost).toFixed(2)}`, 150, y, { align: 'right' })
-    doc.text(`£${amount}`, pageW - margin, y, { align: 'right' })
+    doc.text(`${sym}${Number(mat.cost).toFixed(2)}`, 150, y, { align: 'right' })
+    doc.text(`${sym}${amount}`, pageW - margin, y, { align: 'right' })
     y += 6
   })
 
@@ -85,16 +99,18 @@ export function generateQuotePDF(quote, job, settings, materials = []) {
   doc.line(margin, y, pageW - margin, y)
   y += 5
 
-  const subtotalLine = (label, value) => {
+  // Totals
+  const row = (label, value) => {
     doc.text(label, 150, y, { align: 'right' })
-    doc.text(`£${Number(value).toFixed(2)}`, pageW - margin, y, { align: 'right' })
+    doc.text(`${sym}${Number(value).toFixed(2)}`, pageW - margin, y, { align: 'right' })
     y += 6
   }
-  subtotalLine('Subtotal:', quote.subtotal)
-  if (quote.vat_rate > 0) subtotalLine(`VAT (${quote.vat_rate}%):`, quote.vat_amount)
+  row('Subtotal:', quote.subtotal)
+  if (quote.vat_rate > 0) row(`${taxLabel} (${quote.vat_rate}%):`, quote.vat_amount)
   doc.setFont('helvetica', 'bold')
-  subtotalLine('TOTAL:', quote.total)
+  row('TOTAL:', quote.total)
 
+  // Notes
   if (quote.notes) {
     y += 6
     doc.setFont('helvetica', 'italic')
